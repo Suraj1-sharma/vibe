@@ -31,6 +31,11 @@ type Props = {
   bottomInset: number;
 };
 
+/**
+ * The search box is rendered ONCE at the top level and never inside a conditional
+ * branch. Swapping the tree under it would unmount the TextInput, which drops focus
+ * and closes the keyboard mid-typing. Only `body` below changes as results load.
+ */
 export function SearchScreen({ onOpenPlaylist, onOpenArtist, onMore, bottomInset }: Props) {
   const online = useOnline();
   const downloaded = useDownloadedTracks();
@@ -43,6 +48,7 @@ export function SearchScreen({ onOpenPlaylist, onOpenArtist, onMore, bottomInset
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const reqId = useRef(0);
+  const inputRef = useRef<TextInput>(null);
 
   // debounced search
   useEffect(() => {
@@ -63,6 +69,7 @@ export function SearchScreen({ onOpenPlaylist, onOpenArtist, onMore, bottomInset
         if (id !== reqId.current) return;
         setRes(r);
         setSubmitted(q);
+        addRecentSearch(q);
       } catch (e: any) {
         if (id !== reqId.current) return;
         setError(e?.message ?? 'Search failed');
@@ -74,7 +81,8 @@ export function SearchScreen({ onOpenPlaylist, onOpenArtist, onMore, bottomInset
     return () => clearTimeout(t);
   }, [query, online]);
 
-  const run = (q: string) => {
+  /** Tapping a tile or a recent search is a deliberate jump, so the keyboard goes away. */
+  const jumpTo = (q: string) => {
     setQuery(q);
     setTab('all');
     addRecentSearch(q);
@@ -87,142 +95,18 @@ export function SearchScreen({ onOpenPlaylist, onOpenArtist, onMore, bottomInset
     return downloaded.filter((t) => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q));
   }, [downloaded, query]);
 
-  const header = (
-    <View>
-      <Text style={[font.h1, styles.pad, { marginTop: spacing.md }]}>Search</Text>
-      <View style={[styles.searchBox, { marginHorizontal: spacing.lg }]}>
-        <Ionicons name="search" size={20} color="#000" />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder={online ? 'Songs, artists or playlists' : 'Search your downloads'}
-          placeholderTextColor="#555"
-          style={styles.input}
-          returnKeyType="search"
-          autoCorrect={false}
-          autoCapitalize="none"
-          onSubmitEditing={() => query.trim().length >= 2 && run(query)}
-        />
-        {query.length > 0 && (
-          <Pressable onPress={() => setQuery('')} hitSlop={10}>
-            <Ionicons name="close-circle" size={20} color="#555" />
-          </Pressable>
-        )}
-      </View>
-    </View>
-  );
-
-  // ---- offline ----
-  if (!online) {
-    return (
-      <View style={{ flex: 1 }}>
-        {header}
-        {offlineMatches.length ? (
-          <FlatList
-            data={offlineMatches}
-            keyExtractor={(t) => t.id}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: bottomInset }}
-            ListHeaderComponent={
-              <View style={[styles.rowBtns, styles.pad]}>
-                <PillButton
-                  icon="play"
-                  label="Play all"
-                  primary
-                  onPress={() => void playQueue(offlineMatches, 0, 'Downloads')}
-                />
-              </View>
-            }
-            renderItem={({ item, index }) => (
-              <TrackRow track={item} onPress={() => void playQueue(offlineMatches, index, 'Downloads')} onMore={onMore} />
-            )}
-          />
-        ) : (
-          <Empty
-            icon="cloud-offline-outline"
-            title="You are offline"
-            body="Only your downloaded songs can be searched right now."
-          />
-        )}
-      </View>
-    );
-  }
-
-  // ---- idle: recents + browse tiles ----
-  if (!res && !loading) {
-    return (
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: bottomInset }}>
-        {header}
-        {recents.length > 0 && (
-          <>
-            <View style={[styles.sectionRow, styles.pad, { marginTop: spacing.md }]}>
-              <Text style={font.h3}>Recent searches</Text>
-              <Pressable onPress={clearRecentSearches} hitSlop={8}>
-                <Text style={[font.small, { fontWeight: '700' }]}>Clear</Text>
-              </Pressable>
-            </View>
-            {recents.map((r) => (
-              <Pressable
-                key={r}
-                onPress={() => run(r)}
-                style={({ pressed }) => [styles.recent, pressed && { backgroundColor: colors.bgElevated }]}
-              >
-                <Ionicons name="time-outline" size={20} color={colors.textMuted} />
-                <Text numberOfLines={1} style={[font.body, { flex: 1 }]}>
-                  {r}
-                </Text>
-                <Pressable onPress={() => removeRecentSearch(r)} hitSlop={10}>
-                  <Ionicons name="close" size={18} color={colors.textFaint} />
-                </Pressable>
-              </Pressable>
-            ))}
-          </>
-        )}
-        <Text style={[font.h3, styles.pad, { marginTop: spacing.xl, marginBottom: spacing.sm }]}>Browse Indian &amp; Desi</Text>
-        <View style={[styles.grid, styles.pad]}>
-          {DESI_PRESETS.map((d) => (
-            <Pressable key={d.query} onPress={() => run(d.query)} style={styles.tile}>
-              <Text style={[font.body, { fontWeight: '700' }]} numberOfLines={2}>
-                {d.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </ScrollView>
-    );
-  }
-
-  if (loading && !res) {
-    return (
-      <View style={{ flex: 1 }}>
-        {header}
-        <Loading />
-      </View>
-    );
-  }
-
   const r = res ?? EMPTY;
-  const nothing = !r.tracks.length && !r.artists.length && !r.playlists.length;
-
-  if (nothing) {
-    return (
-      <View style={{ flex: 1 }}>
-        {header}
-        <Empty
-          icon="search-outline"
-          title={`No results for "${submitted || query.trim()}"`}
-          body={
-            error ??
-            'This catalogue carries independent artists, remixes and covers - original label recordings are not on it. Try a broader word, or add your own files from Your Library.'
-          }
-        />
-      </View>
-    );
-  }
-
+  const hasResults = !!res && (r.tracks.length > 0 || r.artists.length > 0 || r.playlists.length > 0);
   const playFrom = (list: Track[], i: number) => void playQueue(list, i, `Search: ${submitted || query.trim()}`);
 
-  const tabBar = (
+  // shared props: taps land on the row without a first tap being eaten to close the
+  // keyboard, and dragging the list never dismisses it
+  const listKeyboardProps = {
+    keyboardShouldPersistTaps: 'handled' as const,
+    keyboardDismissMode: 'none' as const,
+  };
+
+  const tabBar = hasResults ? (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
       {TABS.map((t) => {
         const n =
@@ -244,22 +128,93 @@ export function SearchScreen({ onOpenPlaylist, onOpenArtist, onMore, bottomInset
         );
       })}
     </ScrollView>
-  );
+  ) : null;
 
-  // ---- ALL: top artist, first songs, then playlists and more artists ----
-  if (tab === 'all') {
-    const topArtist = r.artists[0];
-    return (
+  // ---- body ----------------------------------------------------------------
+  let body: React.ReactNode;
+
+  if (!online) {
+    body = offlineMatches.length ? (
       <FlatList
+        {...listKeyboardProps}
+        data={offlineMatches}
+        keyExtractor={(t) => t.id}
+        contentContainerStyle={{ paddingBottom: bottomInset }}
+        ListHeaderComponent={
+          <View style={[styles.rowBtns, styles.pad]}>
+            <PillButton icon="play" label="Play all" primary onPress={() => void playQueue(offlineMatches, 0, 'Downloads')} />
+          </View>
+        }
+        renderItem={({ item, index }) => (
+          <TrackRow track={item} onPress={() => void playQueue(offlineMatches, index, 'Downloads')} onMore={onMore} />
+        )}
+      />
+    ) : (
+      <Empty icon="cloud-offline-outline" title="You are offline" body="Only your downloaded songs can be searched right now." />
+    );
+  } else if (!res && !loading) {
+    body = (
+      <ScrollView {...listKeyboardProps} contentContainerStyle={{ paddingBottom: bottomInset }}>
+        {recents.length > 0 && (
+          <>
+            <View style={[styles.sectionRow, styles.pad, { marginTop: spacing.md }]}>
+              <Text style={font.h3}>Recent searches</Text>
+              <Pressable onPress={clearRecentSearches} hitSlop={8}>
+                <Text style={[font.small, { fontWeight: '700' }]}>Clear</Text>
+              </Pressable>
+            </View>
+            {recents.map((q) => (
+              <Pressable
+                key={q}
+                onPress={() => jumpTo(q)}
+                style={({ pressed }) => [styles.recent, pressed && { backgroundColor: colors.bgElevated }]}
+              >
+                <Ionicons name="time-outline" size={20} color={colors.textMuted} />
+                <Text numberOfLines={1} style={[font.body, { flex: 1 }]}>
+                  {q}
+                </Text>
+                <Pressable onPress={() => removeRecentSearch(q)} hitSlop={10}>
+                  <Ionicons name="close" size={18} color={colors.textFaint} />
+                </Pressable>
+              </Pressable>
+            ))}
+          </>
+        )}
+        <Text style={[font.h3, styles.pad, { marginTop: spacing.xl, marginBottom: spacing.sm }]}>Browse Indian &amp; Desi</Text>
+        <View style={[styles.grid, styles.pad]}>
+          {DESI_PRESETS.map((d) => (
+            <Pressable key={d.query} onPress={() => jumpTo(d.query)} style={styles.tile}>
+              <Text style={[font.body, { fontWeight: '700' }]} numberOfLines={2}>
+                {d.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </ScrollView>
+    );
+  } else if (loading && !res) {
+    body = <Loading />;
+  } else if (!hasResults) {
+    body = (
+      <Empty
+        icon="search-outline"
+        title={`No results for "${submitted || query.trim()}"`}
+        body={
+          error ??
+          'This catalogue carries independent artists, remixes and covers - original label recordings are not on it. Try a broader word, or add your own files from Your Library.'
+        }
+      />
+    );
+  } else if (tab === 'all') {
+    const topArtist = r.artists[0];
+    body = (
+      <FlatList
+        {...listKeyboardProps}
         data={r.tracks.slice(0, 8)}
         keyExtractor={(t) => t.id}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
         contentContainerStyle={{ paddingBottom: bottomInset }}
         ListHeaderComponent={
           <View>
-            {header}
-            {tabBar}
             {topArtist && (
               <>
                 <Text style={[font.h3, styles.pad, { marginBottom: spacing.sm }]}>Top artist</Text>
@@ -271,11 +226,7 @@ export function SearchScreen({ onOpenPlaylist, onOpenArtist, onMore, bottomInset
                 <Text style={font.h3}>Songs</Text>
                 <View style={{ flexDirection: 'row', gap: spacing.sm }}>
                   <PillButton icon="play" label="Play" primary onPress={() => playFrom(r.tracks, 0)} />
-                  <PillButton
-                    icon="arrow-down-circle-outline"
-                    label={`Save ${r.tracks.length}`}
-                    onPress={() => downloadAll(r.tracks)}
-                  />
+                  <PillButton icon="arrow-down-circle-outline" label={`Save ${r.tracks.length}`} onPress={() => downloadAll(r.tracks)} />
                 </View>
               </View>
             )}
@@ -286,9 +237,7 @@ export function SearchScreen({ onOpenPlaylist, onOpenArtist, onMore, bottomInset
           <View>
             {r.tracks.length > 8 && (
               <Pressable onPress={() => setTab('songs')} style={styles.seeAll}>
-                <Text style={[font.small, { fontWeight: '700', color: colors.text }]}>
-                  See all {r.tracks.length} songs
-                </Text>
+                <Text style={[font.small, { fontWeight: '700', color: colors.text }]}>See all {r.tracks.length} songs</Text>
               </Pressable>
             )}
             {r.playlists.length > 0 && (
@@ -321,86 +270,101 @@ export function SearchScreen({ onOpenPlaylist, onOpenArtist, onMore, bottomInset
         }
       />
     );
-  }
-
-  // ---- SONGS ----
-  if (tab === 'songs') {
-    return (
+  } else if (tab === 'songs') {
+    body = (
       <FlatList
+        {...listKeyboardProps}
         data={r.tracks}
         keyExtractor={(t) => t.id}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
         contentContainerStyle={{ paddingBottom: bottomInset }}
         ListHeaderComponent={
-          <View>
-            {header}
-            {tabBar}
-            <View style={[styles.rowBtns, styles.pad]}>
-              <PillButton icon="play" label="Play all" primary onPress={() => playFrom(r.tracks, 0)} />
-              <PillButton
-                icon="arrow-down-circle-outline"
-                label={`Download all (${r.tracks.length})`}
-                onPress={() => downloadAll(r.tracks)}
-              />
-            </View>
+          <View style={[styles.rowBtns, styles.pad]}>
+            <PillButton icon="play" label="Play all" primary onPress={() => playFrom(r.tracks, 0)} />
+            <PillButton
+              icon="arrow-down-circle-outline"
+              label={`Download all (${r.tracks.length})`}
+              onPress={() => downloadAll(r.tracks)}
+            />
           </View>
         }
         renderItem={({ item, index }) => <TrackRow track={item} onPress={() => playFrom(r.tracks, index)} onMore={onMore} />}
       />
     );
-  }
-
-  // ---- ARTISTS ----
-  if (tab === 'artists') {
-    return (
+  } else if (tab === 'artists') {
+    body = (
       <FlatList
+        {...listKeyboardProps}
         data={r.artists}
         keyExtractor={(a) => a.id}
-        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: bottomInset }}
-        ListHeaderComponent={
-          <View>
-            {header}
-            {tabBar}
-          </View>
-        }
         renderItem={({ item }) => <ArtistRow artist={item} onPress={onOpenArtist} />}
+      />
+    );
+  } else {
+    body = (
+      <FlatList
+        {...listKeyboardProps}
+        data={r.playlists}
+        keyExtractor={(p) => p.id}
+        contentContainerStyle={{ paddingBottom: bottomInset }}
+        renderItem={({ item }) => (
+          <Pressable
+            onPress={() => onOpenPlaylist(item)}
+            style={({ pressed }) => [styles.plRow, pressed && { backgroundColor: colors.bgElevated }]}
+          >
+            <Artwork uri={item.artwork} size={52} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={font.body}>
+                {item.name}
+              </Text>
+              <Text numberOfLines={1} style={font.small}>
+                Playlist · {item.trackCount} songs{item.owner ? ` · ${item.owner}` : ''}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+          </Pressable>
+        )}
       />
     );
   }
 
-  // ---- PLAYLISTS ----
   return (
-    <FlatList
-      data={r.playlists}
-      keyExtractor={(p) => p.id}
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ paddingBottom: bottomInset }}
-      ListHeaderComponent={
-        <View>
-          {header}
-          {tabBar}
-        </View>
-      }
-      renderItem={({ item }) => (
-        <Pressable
-          onPress={() => onOpenPlaylist(item)}
-          style={({ pressed }) => [styles.plRow, pressed && { backgroundColor: colors.bgElevated }]}
-        >
-          <Artwork uri={item.artwork} size={52} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={font.body}>
-              {item.name}
-            </Text>
-            <Text numberOfLines={1} style={font.small}>
-              Playlist · {item.trackCount} songs{item.owner ? ` · ${item.owner}` : ''}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
-        </Pressable>
-      )}
-    />
+    <View style={{ flex: 1 }}>
+      {/* mounted once - never swapped, so typing is never interrupted */}
+      <Text style={[font.h1, styles.pad, { marginTop: spacing.md }]}>Search</Text>
+      <View style={[styles.searchBox, { marginHorizontal: spacing.lg }]}>
+        <Ionicons name="search" size={20} color="#000" />
+        <TextInput
+          ref={inputRef}
+          value={query}
+          onChangeText={setQuery}
+          placeholder={online ? 'Songs, artists or playlists' : 'Search your downloads'}
+          placeholderTextColor="#555"
+          style={styles.input}
+          returnKeyType="search"
+          autoCorrect={false}
+          autoCapitalize="none"
+          blurOnSubmit={false}
+          clearButtonMode="never"
+          onSubmitEditing={() => Keyboard.dismiss()}
+        />
+        {loading && query.trim().length >= 2 ? (
+          <Ionicons name="ellipsis-horizontal" size={18} color="#888" />
+        ) : query.length > 0 ? (
+          <Pressable
+            onPress={() => {
+              setQuery('');
+              inputRef.current?.focus();
+            }}
+            hitSlop={10}
+          >
+            <Ionicons name="close-circle" size={20} color="#555" />
+          </Pressable>
+        ) : null}
+      </View>
+      {tabBar}
+      <View style={{ flex: 1 }}>{body}</View>
+    </View>
   );
 }
 
