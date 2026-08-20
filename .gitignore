@@ -39,3 +39,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local scratch (not part of the app)
+*.log
+vibe-qr.png
+.claude/

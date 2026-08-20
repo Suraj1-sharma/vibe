@@ -1,0 +1,109 @@
+name: Build unsigned iOS IPA
+
+# Produces an UNSIGNED .ipa. Re-sign and install it from Windows with Sideloadly
+# (or AltServer) using a free Apple ID -- the signature lasts 7 days, then re-run
+# Sideloadly to refresh it.
+#
+# Run it from the repo's Actions tab -> "Build unsigned iOS IPA" -> Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      clean_pods:
+        description: 'Ignore the CocoaPods cache (slower, use if pods fail)'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Expo SDK 54 requires Xcode 16.1 or newer. Pick the newest one the runner
+      # has rather than trusting the image default, and print it so a version
+      # mismatch is obvious in the log.
+      - name: Select newest Xcode
+        run: |
+          set -euo pipefail
+          XC="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          echo "Using $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Generate native iOS project
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.clean_pods }}" = "true" ]; then
+            rm -rf Pods Podfile.lock
+          fi
+          pod install --repo-update
+
+      - name: Build unsigned archive
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          SCHEME="$(ls -d *.xcworkspace | head -n1 | sed 's/\.xcworkspace$//')"
+          echo "Building scheme: $SCHEME"
+          xcodebuild archive \
+            -workspace "$SCHEME.xcworkspace" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$PWD/build/App.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package into .ipa
+        working-directory: ios/build
+        run: |
+          set -euo pipefail
+          APP="$(ls -d App.xcarchive/Products/Applications/*.app | head -n1)"
+          echo "Packaging $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry Vibe-unsigned.ipa Payload
+          SIZE=$(stat -f%z Vibe-unsigned.ipa)
+          echo "IPA size: $SIZE bytes"
+          # A real build is tens of MB. Anything tiny means the archive step
+          # produced nothing useful, so fail loudly instead of shipping a dud.
+          if [ "$SIZE" -lt 2000000 ]; then
+            echo "::error::IPA is only $SIZE bytes - the archive step did not produce a real app."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vibe-unsigned-ipa
+          path: ios/build/Vibe-unsigned.ipa
+          retention-days: 30
+
+      # Makes a failed run diagnosable without re-running it.
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            ios/Podfile.lock
+            ios/build/**/*.log
+          retention-days: 7
+          if-no-files-found: ignore
