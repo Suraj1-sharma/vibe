@@ -108,6 +108,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.card,
     marginRight: spacing.sm,
+    // never inherit the parent's height - a chip is always its own content size
+    alignSelf: 'center',
   },
   chipActive: { backgroundColor: colors.accent },
   pill: {

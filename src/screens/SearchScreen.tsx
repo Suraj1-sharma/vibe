@@ -107,7 +107,12 @@ export function SearchScreen({ onOpenPlaylist, onOpenArtist, onMore, bottomInset
   };
 
   const tabBar = hasResults ? (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.chipsBar}
+      contentContainerStyle={styles.chips}
+    >
       {TABS.map((t) => {
         const n =
           t.key === 'songs'
@@ -382,7 +387,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   input: { flex: 1, color: '#000', fontSize: 16, fontWeight: '500', paddingVertical: 0 },
-  chips: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  // A horizontal ScrollView sitting directly in a flex column will stretch to fill
+  // the height, dragging the chips with it. flexGrow/flexShrink 0 pins it to its
+  // content, and alignItems keeps each chip at its natural height.
+  chipsBar: { flexGrow: 0, flexShrink: 0 },
+  chips: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, alignItems: 'center' },
   rowBtns: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginVertical: spacing.sm },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   recent: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: 10 },
