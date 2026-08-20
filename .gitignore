@@ -44,3 +44,6 @@ yarn-error.*
 *.log
 vibe-qr.png
 .claude/
+
+# build output - the IPA and its unpacked contents
+ipa-out/
