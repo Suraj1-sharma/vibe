@@ -22,6 +22,17 @@ export type Playlist = {
   description: string | null;
 };
 
+export type Artist = {
+  id: string;
+  name: string;
+  handle: string;
+  artwork: string | null;
+  trackCount: number;
+  followerCount: number;
+  isVerified: boolean;
+  bio: string | null;
+};
+
 export type DownloadStatus = 'idle' | 'queued' | 'downloading' | 'done' | 'error';
 
 export type DownloadEntry = {

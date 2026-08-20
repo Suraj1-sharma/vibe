@@ -7,16 +7,18 @@ import { OfflineBanner } from './src/components/Common';
 import { MiniPlayer } from './src/components/MiniPlayer';
 import { NowPlaying } from './src/components/NowPlaying';
 import { TrackSheet } from './src/components/TrackSheet';
+import { ArtistScreen } from './src/screens/ArtistScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { PlaylistScreen } from './src/screens/PlaylistScreen';
 import { SearchScreen } from './src/screens/SearchScreen';
 import { hydrateDownloads } from './src/services/downloads';
 import { hydrateLikes } from './src/services/likes';
+import { hydrateRecentSearches } from './src/services/recentSearches';
 import { startNetworkWatcher } from './src/services/network';
 import { useCurrentTrack } from './src/services/player';
 import { colors, font, MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from './src/theme';
-import { Playlist, Track } from './src/types';
+import { Artist, Playlist, Track } from './src/types';
 
 type Tab = 'home' | 'search' | 'library';
 
@@ -39,6 +41,7 @@ function Root() {
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('home');
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
+  const [artist, setArtist] = useState<Artist | null>(null);
   const [nowPlaying, setNowPlaying] = useState(false);
   const [sheetTrack, setSheetTrack] = useState<Track | null>(null);
   const [ready, setReady] = useState(false);
@@ -46,7 +49,7 @@ function Root() {
 
   useEffect(() => {
     startNetworkWatcher();
-    Promise.all([hydrateDownloads(), hydrateLikes()]).finally(() => setReady(true));
+    Promise.all([hydrateDownloads(), hydrateLikes(), hydrateRecentSearches()]).finally(() => setReady(true));
   }, []);
 
   const bottomInset = TAB_BAR_HEIGHT + insets.bottom + (current ? MINI_PLAYER_HEIGHT + 8 : 0) + 8;
@@ -56,12 +59,20 @@ function Root() {
       <View style={{ height: insets.top }} />
       <OfflineBanner />
       <View style={{ flex: 1 }}>
-        {!ready ? null : playlist ? (
+        {!ready ? null : artist ? (
+          <ArtistScreen
+            artist={artist}
+            onBack={() => setArtist(null)}
+            onMore={setSheetTrack}
+            bottomInset={bottomInset}
+            topInset={0}
+          />
+        ) : playlist ? (
           <PlaylistScreen playlist={playlist} onBack={() => setPlaylist(null)} onMore={setSheetTrack} bottomInset={bottomInset} topInset={0} />
         ) : tab === 'home' ? (
           <HomeScreen onOpenPlaylist={setPlaylist} onMore={setSheetTrack} onGoLibrary={() => setTab('library')} bottomInset={bottomInset} />
         ) : tab === 'search' ? (
-          <SearchScreen onOpenPlaylist={setPlaylist} onMore={setSheetTrack} bottomInset={bottomInset} />
+          <SearchScreen onOpenPlaylist={setPlaylist} onOpenArtist={setArtist} onMore={setSheetTrack} bottomInset={bottomInset} />
         ) : (
           <LibraryScreen onMore={setSheetTrack} bottomInset={bottomInset} />
         )}
@@ -72,12 +83,13 @@ function Root() {
         <MiniPlayer onOpen={() => setNowPlaying(true)} />
         <View style={styles.tabBar}>
           {TABS.map((t) => {
-            const active = tab === t.key && !playlist;
+            const active = tab === t.key && !playlist && !artist;
             return (
               <Pressable
                 key={t.key}
                 onPress={() => {
                   setPlaylist(null);
+                  setArtist(null);
                   setTab(t.key);
                 }}
                 style={styles.tab}

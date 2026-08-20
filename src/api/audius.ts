@@ -1,4 +1,4 @@
-import { Playlist, Track } from '../types';
+import { Artist, Playlist, Track } from '../types';
 
 /**
  * Audius public API (https://audiusproject.github.io/api-docs/) — free, no API key.
@@ -68,6 +68,30 @@ type RawPlaylist = {
   artwork?: { '150x150'?: string; '480x480'?: string; '1000x1000'?: string } | null;
   user?: { name?: string };
 };
+
+type RawUser = {
+  id: string;
+  name: string;
+  handle: string;
+  bio?: string | null;
+  track_count?: number;
+  follower_count?: number;
+  is_verified?: boolean;
+  profile_picture?: { '150x150'?: string; '480x480'?: string; '1000x1000'?: string } | null;
+};
+
+export function mapArtist(u: RawUser): Artist {
+  return {
+    id: u.id,
+    name: u.name || u.handle,
+    handle: u.handle,
+    artwork: u.profile_picture?.['480x480'] ?? u.profile_picture?.['150x150'] ?? null,
+    trackCount: u.track_count ?? 0,
+    followerCount: u.follower_count ?? 0,
+    isVerified: !!u.is_verified,
+    bio: u.bio ?? null,
+  };
+}
 
 export function mapTrack(t: RawTrack): Track {
   return {
@@ -186,4 +210,101 @@ export async function getTrack(id: string) {
 export async function getStreamUrl(trackId: string) {
   const host = await getHost();
   return `${host}/v1/tracks/${trackId}/stream?${qs({})}`;
+}
+
+// ---- search ---------------------------------------------------------------
+
+export type SearchResults = {
+  tracks: Track[];
+  artists: Artist[];
+  playlists: Playlist[];
+};
+
+/**
+ * Scores how well a result matches what was typed. Audius returns loose matches,
+ * so without this the good hits get buried under noise.
+ */
+function score(name: string, query: string, popularity: number) {
+  const n = name.toLowerCase().trim();
+  const q = query.toLowerCase().trim();
+  let s = 0;
+  if (n === q) s += 1000;
+  else if (n.startsWith(q)) s += 500;
+  else if (n.includes(q)) s += 250;
+  // every query word that appears somewhere still counts for something
+  const words = q.split(/\s+/).filter(Boolean);
+  if (words.length > 1) s += words.filter((w) => n.includes(w)).length * 60;
+  // popularity as a tie-breaker only, compressed so a viral track cannot
+  // outrank an exact title match
+  s += Math.log10(Math.max(1, popularity)) * 20;
+  return s;
+}
+
+/**
+ * One-shot search across songs, artists and playlists.
+ *
+ * Uses `/search/full`, which returns every result type in a single request, then
+ * drops the dead entries Audius happily returns (artists with no tracks, empty
+ * playlists) and re-ranks what is left by relevance.
+ */
+export async function searchAll(query: string, limit = 30): Promise<SearchResults> {
+  const q = query.trim();
+  if (!q) return { tracks: [], artists: [], playlists: [] };
+
+  const raw = await get<{ tracks?: RawTrack[]; users?: RawUser[]; playlists?: RawPlaylist[] }>(
+    '/search/full',
+    { query: q, limit },
+  );
+
+  const tracks = (raw.tracks ?? [])
+    .filter(streamable)
+    .map(mapTrack)
+    .map((t) => ({ t, s: score(`${t.title} ${t.artist}`, q, t.playCount) }))
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.t);
+
+  // an artist with no tracks is a dead end - never show one
+  const artists = (raw.users ?? [])
+    .map(mapArtist)
+    .filter((a) => a.trackCount > 0)
+    .map((a) => ({ a, s: score(a.name, q, a.followerCount) }))
+    .sort((x, y) => y.s - x.s)
+    .map((x) => x.a);
+
+  // same for empty playlists
+  const playlists = (raw.playlists ?? [])
+    .map(mapPlaylist)
+    .filter((p) => p.trackCount > 0)
+    .map((p) => ({ p, s: score(p.name, q, p.trackCount) }))
+    .sort((x, y) => y.s - x.s)
+    .map((x) => x.p);
+
+  return { tracks, artists, playlists };
+}
+
+/** Type-ahead suggestions; same shape as searchAll but cheaper. */
+export async function searchSuggest(query: string, limit = 6): Promise<SearchResults> {
+  const q = query.trim();
+  if (q.length < 2) return { tracks: [], artists: [], playlists: [] };
+  const raw = await get<{ tracks?: RawTrack[]; users?: RawUser[]; playlists?: RawPlaylist[] }>(
+    '/search/autocomplete',
+    { query: q, limit },
+  );
+  return {
+    tracks: (raw.tracks ?? []).filter(streamable).map(mapTrack),
+    artists: (raw.users ?? []).map(mapArtist).filter((a) => a.trackCount > 0),
+    playlists: (raw.playlists ?? []).map(mapPlaylist).filter((p) => p.trackCount > 0),
+  };
+}
+
+// ---- artists --------------------------------------------------------------
+
+export async function getArtist(id: string): Promise<Artist> {
+  const raw = await get<RawUser>(`/users/${id}`);
+  return mapArtist(raw);
+}
+
+export async function getArtistTracks(id: string, limit = 50): Promise<Track[]> {
+  const raw = await get<RawTrack[]>(`/users/${id}/tracks`, { limit });
+  return raw.filter(streamable).map(mapTrack);
 }
