@@ -1,4 +1,4 @@
-# Vibe — offline-first music player
+# RhythmX — offline-first music player
 
 A Spotify-style music app (React Native + Expo SDK 54) with one killer feature: **tap ⬇ on any song
 and it's saved to the phone forever — plays with zero internet.**
@@ -20,7 +20,7 @@ masters, no original Arijit Singh or Lata Mangeshkar album tracks. That catalogu
 no app can legally stream or let you download it without paying the labels
 (JioSaavn Pro, Spotify, YouTube Music and Wynk all do, and all include offline downloads).
 
-To have those songs in Vibe, use **Your Library → Import songs from phone** and add files you
+To have those songs in RhythmX, use **Your Library → Import songs from phone** and add files you
 already own. Imported songs are stored on the device and behave exactly like downloads: they play
 offline, queue, shuffle and can be liked. They show a phone icon instead of the download arrow.
 

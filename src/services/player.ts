@@ -159,7 +159,7 @@ async function loadAndPlay(track: Track) {
       {
         title: track.title,
         artist: track.artist,
-        albumTitle: playerStore.get().queueTitle || 'Vibe',
+        albumTitle: playerStore.get().queueTitle || 'RhythmX',
         artworkUrl: getLocalArtwork(track.id) ?? track.artworkLarge ?? track.artwork ?? undefined,
       },
       { showSeekForward: false, showSeekBackward: false },

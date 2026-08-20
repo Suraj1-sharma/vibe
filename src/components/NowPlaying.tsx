@@ -68,7 +68,7 @@ export function NowPlaying({ visible, onClose }: { visible: boolean; onClose: ()
             <View style={{ flex: 1, alignItems: 'center' }}>
               <Text style={font.tiny}>{showQueue ? 'QUEUE' : 'PLAYING FROM'}</Text>
               <Text numberOfLines={1} style={[font.small, { color: colors.text, fontWeight: '700' }]}>
-                {queueTitle || 'Vibe'}
+                {queueTitle || 'RhythmX'}
               </Text>
             </View>
             <Pressable onPress={() => setSheetTrack(track)} hitSlop={12}>
